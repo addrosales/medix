@@ -46,6 +46,47 @@
   body{ padding-bottom:40px; }
   ::selection{ background:var(--stamp); color:var(--white); }
 
+  /* LOGIN */
+  #loginScreen{
+    position:fixed; inset:0; background:var(--rail); z-index:1000;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:32px 24px;
+  }
+  #loginScreen.hidden{ display:none; }
+  .login-logo{
+    width:80px; height:80px; background:var(--white); border-radius:20px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--disp); font-weight:900; font-size:42px; color:var(--stamp);
+    margin-bottom:24px; box-shadow:0 8px 24px rgba(0,0,0,.25);
+  }
+  .login-title{ font-family:var(--disp); font-weight:700; font-size:22px; color:var(--white); margin-bottom:6px; }
+  .login-sub{ font-size:12px; color:rgba(255,255,255,.55); letter-spacing:1px; text-transform:uppercase; margin-bottom:36px; }
+  .login-form{ width:100%; max-width:340px; }
+  .login-field{ margin-bottom:14px; }
+  .login-field label{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,.6); font-family:var(--disp); font-weight:600; margin-bottom:7px; }
+  .login-field input{
+    width:100%; padding:14px 16px; border-radius:10px; border:1.5px solid rgba(255,255,255,.15);
+    background:rgba(255,255,255,.08); color:var(--white); font-family:var(--mono); font-size:16px;
+  }
+  .login-field input:focus{ outline:none; border-color:rgba(255,255,255,.45); background:rgba(255,255,255,.12); }
+  .login-field input::placeholder{ color:rgba(255,255,255,.3); }
+  .login-btn{
+    width:100%; padding:16px; border:none; border-radius:10px; background:var(--stamp);
+    color:var(--white); font-family:var(--disp); font-weight:700; font-size:15px;
+    text-transform:uppercase; letter-spacing:.5px; cursor:pointer; margin-top:8px;
+  }
+  .login-btn:active{ opacity:.85; }
+  .login-error{ color:#ffb3a7; font-size:13px; text-align:center; margin-top:14px; font-family:var(--disp); min-height:20px; }
+  .login-loading{ opacity:.6; pointer-events:none; }
+
+  /* LOGOUT btn */
+  .logout-btn{
+    background:none; border:1px solid rgba(255,255,255,.2); color:rgba(255,255,255,.7);
+    font-family:var(--disp); font-size:11px; padding:5px 10px; border-radius:6px; cursor:pointer;
+    text-transform:uppercase; letter-spacing:.5px;
+  }
+  .logout-btn:active{ background:rgba(255,255,255,.1); }
+
   /* HEADER */
   header{
     background:var(--rail);
@@ -230,6 +271,25 @@
 </head>
 <body>
 
+<!-- PANTALLA DE LOGIN -->
+<div id="loginScreen">
+  <div class="login-logo">M</div>
+  <div class="login-title">Relatório MEDIX</div>
+  <div class="login-sub">Eagle Solutions</div>
+  <div class="login-form">
+    <div class="login-field">
+      <label>E-mail</label>
+      <input id="loginEmail" type="email" inputmode="email" placeholder="seu@email.com" autocomplete="email">
+    </div>
+    <div class="login-field">
+      <label>Senha</label>
+      <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="login-btn" id="loginBtn">Entrar</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
 <header>
   <div class="header-top">
     <div class="brand">
@@ -238,7 +298,10 @@
         <h1>Relatório MEDIX</h1>
       </div>
     </div>
-    <div class="conn"><span class="dot" id="connDot"></span><span id="connText">Salvo neste dispositivo</span></div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="conn"><span class="dot" id="connDot"></span><span id="connText">Salvo neste dispositivo</span></div>
+      <button class="logout-btn" id="logoutBtn" style="display:none">Sair</button>
+    </div>
   </div>
   <div class="stats-row">
     <div class="stat"><div class="n" id="statTotal">0</div><div class="l" data-i18n="statHoy">Hoy</div></div>
@@ -480,34 +543,88 @@
   let db = null;
 
   // ---------- INICIALIZAR FIREBASE ----------
+  let authUser = null;
+
   async function initFirebase(){
     if(!FIREBASE_CONFIGURED) return false;
     try{
       const { initializeApp }   = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-      const { getFirestore, doc, setDoc, getDoc, onSnapshot, collection }
+      const { getFirestore, doc, setDoc, onSnapshot }
         = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-      const app = initializeApp(FIREBASE_CONFIG);
-      db = getFirestore(app);
+      const { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+        = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
 
-      // escuchar cambios en tiempo real
-      const entriesRef = doc(db, 'medix', 'entries');
-      onSnapshot(entriesRef, (snap) => {
-        if(snap.exists()){
-          const data = snap.data();
-          entries = data.list || [];
-          render();
+      const app  = initializeApp(FIREBASE_CONFIG);
+      db         = getFirestore(app);
+      const auth = getAuth(app);
+
+      // ---- LOGIN ----
+      $('loginBtn').addEventListener('click', async () => {
+        const email    = $('loginEmail').value.trim();
+        const password = $('loginPassword').value;
+        $('loginError').textContent = '';
+        if(!email || !password){ $('loginError').textContent = 'Preencha e-mail e senha.'; return; }
+        $('loginBtn').textContent = 'Entrando…';
+        $('loginBtn').classList.add('login-loading');
+        try{
+          await signInWithEmailAndPassword(auth, email, password);
+        }catch(err){
+          $('loginBtn').textContent = 'Entrar';
+          $('loginBtn').classList.remove('login-loading');
+          const msgs = {
+            'auth/invalid-credential':   'E-mail ou senha incorretos.',
+            'auth/user-not-found':       'Usuário não encontrado.',
+            'auth/wrong-password':       'Senha incorreta.',
+            'auth/too-many-requests':    'Muitas tentativas. Tente mais tarde.',
+            'auth/invalid-email':        'E-mail inválido.',
+          };
+          $('loginError').textContent = msgs[err.code] || 'Erro ao entrar. Tente novamente.';
         }
       });
 
-      const metaRef = doc(db, 'medix', 'meta');
-      onSnapshot(metaRef, (snap) => {
-        if(snap.exists() && document.activeElement !== $('reportResponsable')){
-          $('reportResponsable').value = snap.data().responsable || '';
+      // permitir login con Enter
+      $('loginPassword').addEventListener('keydown', e => {
+        if(e.key === 'Enter') $('loginBtn').click();
+      });
+
+      // ---- LOGOUT ----
+      $('logoutBtn').addEventListener('click', async () => {
+        if(confirm('Deseja sair do sistema?')){
+          await signOut(auth);
         }
       });
 
-      connDot.classList.remove('off');
-      connText.textContent = t('conexionNube');
+      // ---- ESTADO DE AUTH ----
+      onAuthStateChanged(auth, (user) => {
+        authUser = user;
+        if(user){
+          // Usuario autenticado — mostrar app
+          $('loginScreen').classList.add('hidden');
+          $('logoutBtn').style.display = 'block';
+          connDot.classList.remove('off');
+          connText.textContent = t('conexionNube');
+
+          // Escuchar datos en tiempo real
+          onSnapshot(doc(db, 'medix', 'entries'), (snap) => {
+            if(snap.exists()){
+              entries = snap.data().list || [];
+              render();
+            }
+          });
+          onSnapshot(doc(db, 'medix', 'meta'), (snap) => {
+            if(snap.exists() && document.activeElement !== $('reportResponsable')){
+              $('reportResponsable').value = snap.data().responsable || '';
+            }
+          });
+        } else {
+          // No autenticado — mostrar login
+          $('loginScreen').classList.remove('hidden');
+          $('logoutBtn').style.display = 'none';
+          $('loginBtn').textContent = 'Entrar';
+          $('loginBtn').classList.remove('login-loading');
+        }
+      });
+
       return true;
     }catch(err){
       console.warn('Firebase error:', err);
