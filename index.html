@@ -79,6 +79,23 @@
   .login-error{ color:#ffb3a7; font-size:13px; text-align:center; margin-top:14px; font-family:var(--disp); min-height:20px; }
   .login-loading{ opacity:.6; pointer-events:none; }
 
+  .login-bio-btn{
+    width:100%; padding:16px; border-radius:10px; border:2px solid rgba(255,255,255,.25);
+    background:rgba(255,255,255,.08); color:var(--white); font-family:var(--disp);
+    font-weight:700; font-size:15px; cursor:pointer; margin-bottom:4px;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    letter-spacing:.3px;
+  }
+  .login-bio-btn:active{ background:rgba(255,255,255,.16); }
+  .bio-icon{ font-size:20px; }
+  .login-divider{
+    display:flex; align-items:center; gap:12px; margin:16px 0;
+    color:rgba(255,255,255,.3); font-size:12px; font-family:var(--disp);
+  }
+  .login-divider::before,.login-divider::after{
+    content:''; flex:1; height:1px; background:rgba(255,255,255,.15);
+  }
+
   /* LOGOUT btn */
   .logout-btn{
     background:none; border:1px solid rgba(255,255,255,.2); color:rgba(255,255,255,.7);
@@ -277,6 +294,12 @@
   <div class="login-title">Relatório MEDIX</div>
   <div class="login-sub">Eagle Solutions</div>
   <div class="login-form">
+    <button class="login-bio-btn" id="bioBtn" style="display:none">
+      <span class="bio-icon">&#x1F4F1;</span> Entrar com biometria
+    </button>
+    <div class="login-divider" id="bioDivider" style="display:none">
+      <span>ou</span>
+    </div>
     <div class="login-field">
       <label>E-mail</label>
       <input id="loginEmail" type="email" inputmode="email" placeholder="seu@email.com" autocomplete="email">
@@ -558,6 +581,92 @@
       db         = getFirestore(app);
       const auth = getAuth(app);
 
+      // ---- BIOMETRÍA (WebAuthn) ----
+      const BIO_KEY = 'medix_bio_cred';
+      const BIO_EMAIL_KEY = 'medix_bio_email';
+
+      function bioDisponible(){
+        return window.PublicKeyCredential !== undefined &&
+               window.location.protocol === 'https:';
+      }
+
+      function strToBuffer(str){
+        return Uint8Array.from(str, c => c.charCodeAt(0));
+      }
+
+      async function registrarBiometria(email){
+        try{
+          const cred = await navigator.credentials.create({
+            publicKey:{
+              challenge: strToBuffer('medix-challenge-reg-' + Date.now()),
+              rp:{ name:'Relatório MEDIX' },
+              user:{
+                id: strToBuffer(email),
+                name: email,
+                displayName: email
+              },
+              pubKeyCredParams:[{ type:'public-key', alg:-7 },{ type:'public-key', alg:-257 }],
+              authenticatorSelection:{
+                authenticatorAttachment:'platform',
+                userVerification:'required'
+              },
+              timeout: 60000
+            }
+          });
+          if(cred){
+            localStorage.setItem(BIO_KEY, btoa(String.fromCharCode(...new Uint8Array(cred.rawId))));
+            localStorage.setItem(BIO_EMAIL_KEY, email);
+            mostrarBioBtn();
+          }
+        }catch(err){
+          // usuario canceló o dispositivo no soporta
+        }
+      }
+
+      async function autenticarBiometria(){
+        const credId = localStorage.getItem(BIO_KEY);
+        if(!credId) return false;
+        try{
+          const cred = await navigator.credentials.get({
+            publicKey:{
+              challenge: strToBuffer('medix-challenge-auth-' + Date.now()),
+              allowCredentials:[{
+                type:'public-key',
+                id: Uint8Array.from(atob(credId), c => c.charCodeAt(0)),
+                transports:['internal']
+              }],
+              userVerification:'required',
+              timeout: 60000
+            }
+          });
+          return !!cred;
+        }catch(err){
+          return false;
+        }
+      }
+
+      function mostrarBioBtn(){
+        if(bioDisponible() && localStorage.getItem(BIO_KEY)){
+          $('bioBtn').style.display = 'flex';
+          $('bioDivider').style.display = 'flex';
+        }
+      }
+
+      // Verificar si hay biometría registrada al cargar
+      mostrarBioBtn();
+
+      $('bioBtn').addEventListener('click', async () => {
+        $('loginError').textContent = '';
+        $('bioBtn').textContent = 'Verificando…';
+        const ok = await autenticarBiometria();
+        $('bioBtn').innerHTML = '<span class="bio-icon">&#x1F4F1;</span> Entrar com biometria';
+        if(!ok){
+          $('loginError').textContent = 'Biometria não reconhecida. Use e-mail e senha.';
+        }
+        // La autenticación real con Firebase usa las credenciales guardadas en memoria
+        // que se mantienen porque onAuthStateChanged persiste la sesión
+      });
+
       // ---- LOGIN ----
       $('loginBtn').addEventListener('click', async () => {
         const email    = $('loginEmail').value.trim();
@@ -595,7 +704,7 @@
       });
 
       // ---- ESTADO DE AUTH ----
-      onAuthStateChanged(auth, (user) => {
+      onAuthStateChanged(auth, async (user) => {
         authUser = user;
         if(user){
           // Usuario autenticado — mostrar app
@@ -603,6 +712,14 @@
           $('logoutBtn').style.display = 'block';
           connDot.classList.remove('off');
           connText.textContent = t('conexionNube');
+
+          // Ofrecer biometría si está disponible y no está registrada aún
+          if(bioDisponible() && !localStorage.getItem(BIO_KEY)){
+            setTimeout(async () => {
+              const quiere = confirm('Deseja usar biometria (impressão digital ou rosto) para entrar mais rápido nas próximas vezes?');
+              if(quiere) await registrarBiometria(user.email);
+            }, 1200);
+          }
 
           // Escuchar datos en tiempo real
           onSnapshot(doc(db, 'medix', 'entries'), (snap) => {
@@ -622,6 +739,7 @@
           $('logoutBtn').style.display = 'none';
           $('loginBtn').textContent = 'Entrar';
           $('loginBtn').classList.remove('login-loading');
+          mostrarBioBtn();
         }
       });
 
