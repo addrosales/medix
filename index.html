@@ -18,33 +18,8 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='32' fill='%232f4538'/%3E%3Ctext x='96' y='130' font-family='Arial Black,Arial' font-weight='900' font-size='110' text-anchor='middle' fill='%23c1502e'%3EM%3C/text%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='32' fill='%232f4538'/%3E%3Ctext x='96' y='130' font-family='Arial Black,Arial' font-weight='900' font-size='110' text-anchor='middle' fill='%23c1502e'%3EM%3C/text%3E%3C/svg%3E">
 
-<!-- Manifest inline para PWA -->
-<script>
-const manifestData = {
-  name: "Relatório MEDIX",
-  short_name: "MEDIX",
-  description: "Controle de recebimento de mercadorias",
-  start_url: "./",
-  display: "standalone",
-  background_color: "#2f4538",
-  theme_color: "#2f4538",
-  orientation: "portrait",
-  icons: [
-    {
-      src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='32' fill='%232f4538'/%3E%3Ctext x='96' y='130' font-family='Arial Black,Arial' font-weight='900' font-size='110' text-anchor='middle' fill='%23c1502e'%3EM%3C/text%3E%3C/svg%3E",
-      sizes: "192x192",
-      type: "image/svg+xml",
-      purpose: "any maskable"
-    }
-  ]
-};
-const blob = new Blob([JSON.stringify(manifestData)], {type:'application/json'});
-const manifestURL = URL.createObjectURL(blob);
-const link = document.createElement('link');
-link.rel = 'manifest';
-link.href = manifestURL;
-document.currentScript.parentNode.appendChild(link);
-</script>
+<!-- Manifest externo para PWA -->
+<link rel="manifest" href="manifest.json">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <style>
