@@ -79,22 +79,7 @@
   .login-error{ color:#ffb3a7; font-size:13px; text-align:center; margin-top:14px; font-family:var(--disp); min-height:20px; }
   .login-loading{ opacity:.6; pointer-events:none; }
 
-  .login-bio-btn{
-    width:100%; padding:16px; border-radius:10px; border:2px solid rgba(255,255,255,.25);
-    background:rgba(255,255,255,.08); color:var(--white); font-family:var(--disp);
-    font-weight:700; font-size:15px; cursor:pointer; margin-bottom:4px;
-    display:flex; align-items:center; justify-content:center; gap:10px;
-    letter-spacing:.3px;
-  }
-  .login-bio-btn:active{ background:rgba(255,255,255,.16); }
-  .bio-icon{ font-size:20px; }
-  .login-divider{
-    display:flex; align-items:center; gap:12px; margin:16px 0;
-    color:rgba(255,255,255,.3); font-size:12px; font-family:var(--disp);
-  }
-  .login-divider::before,.login-divider::after{
-    content:''; flex:1; height:1px; background:rgba(255,255,255,.15);
-  }
+
 
   /* LOGOUT btn */
   .logout-btn{
@@ -294,12 +279,6 @@
   <div class="login-title">Relatório MEDIX</div>
   <div class="login-sub">Eagle Solutions</div>
   <div class="login-form">
-    <button class="login-bio-btn" id="bioBtn" style="display:none">
-      <span class="bio-icon">&#x1F4F1;</span> Entrar com biometria
-    </button>
-    <div class="login-divider" id="bioDivider" style="display:none">
-      <span>ou</span>
-    </div>
     <div class="login-field">
       <label>E-mail</label>
       <input id="loginEmail" type="email" inputmode="email" placeholder="seu@email.com" autocomplete="email">
@@ -328,7 +307,7 @@
   </div>
   <div class="stats-row">
     <div class="stat"><div class="n" id="statTotal">0</div><div class="l" data-i18n="statHoy">Hoy</div></div>
-    <div class="stat"><div class="n" id="statCancel">0</div><div class="l" data-i18n="statCanceladas">Canceladas</div></div>
+    <div class="stat"><div class="n" id="statCancel">0</div><div class="l" data-i18n="statCanceladas">Não embarcadas</div></div>
     <div class="stat"><div class="n" id="statQty">0</div><div class="l" data-i18n="statVolumenes">Volúmenes</div></div>
   </div>
   <div class="report-meta">
@@ -373,7 +352,7 @@
     </div>
     <label class="checkbox-field" for="fCancelada">
       <input id="fCancelada" type="checkbox">
-      <span data-i18n="lblNotaCancelada">¿Nota cancelada?</span>
+      <span data-i18n="lblNotaCancelada">Não embarcada?</span>
     </label>
     <button class="btn btn-primary" id="btnGuardar" data-i18n="btnRegistrar">Registrar entrada</button>
     <button class="btn btn-ghost" id="btnExport" data-i18n="btnExportarExcel" style="margin-top:10px;">⬇ Exportar a Excel</button>
@@ -386,7 +365,7 @@
     </div>
     <div class="filter-pills">
       <button class="pill active" data-filter="todos" data-i18n="filtroTodos">Todos</button>
-      <button class="pill" data-filter="cancelada" data-i18n="filtroCanceladas">Canceladas</button>
+      <button class="pill" data-filter="cancelada" data-i18n="filtroCanceladas">Não embarcadas</button>
     </div>
     <div id="listContainer">
       <div class="loading" data-i18n="cargandoRegistros">Cargando registros…</div>
@@ -414,7 +393,7 @@
 
   const I18N = {
       statHoy: 'Hoje',
-      statCanceladas: 'Canceladas',
+      statCanceladas: 'Não embarcadas',
       statVolumenes: 'Volumes',
       lblResponsable: 'Responsável',
       lblFecha: 'Data',
@@ -424,14 +403,14 @@
       lblDestino: 'UF',
       lblObservacionesOpcional: 'Observações (opcional)',
       phObservaciones: 'Observações, transportadora, etc.',
-      lblNotaCancelada: 'Nota cancelada?',
+      lblNotaCancelada: 'Não embarcada?',
       btnRegistrar: 'Registrar entrada',
       btnGuardarCambios: 'Salvar alterações',
       btnGuardando: 'Salvando…',
       tituloRegistros: 'Registros',
       phBuscar: 'Buscar por nota fiscal ou UF…',
       filtroTodos: 'Todos',
-      filtroCanceladas: 'Canceladas',
+      filtroCanceladas: 'Não embarcadas',
       filtroHoy: 'Hoje',
       cargandoRegistros: 'Carregando registros…',
       btnExportarExcel: '⬇ Exportar para Excel',
@@ -444,7 +423,7 @@
       colEstado: 'Estado',
       colObservaciones: 'Observações',
       colTotal: 'Total',
-      estadoCancelada: 'Cancelada',
+      estadoCancelada: 'Não embarcada',
       sinNota: 'Sem nota',
       etiquetaCantidad: 'Quantidade',
       etiquetaDestino: 'UF',
@@ -567,7 +546,6 @@
 
   // ---------- INICIALIZAR FIREBASE ----------
   let authUser = null;
-  let lastPassword = '';
 
   async function initFirebase(){
     if(!FIREBASE_CONFIGURED) return false;
@@ -582,113 +560,6 @@
       db         = getFirestore(app);
       const auth = getAuth(app);
 
-      // ---- BIOMETRÍA (WebAuthn) ----
-      const BIO_KEY      = 'medix_bio_cred';
-      const BIO_EMAIL_KEY= 'medix_bio_email';
-      const BIO_PWD_KEY  = 'medix_bio_pwd';
-
-      function bioDisponible(){
-        return window.PublicKeyCredential !== undefined &&
-               window.location.protocol === 'https:';
-      }
-
-      function strToBuffer(str){
-        return Uint8Array.from(str, c => c.charCodeAt(0));
-      }
-
-      // Cifrado simple XOR con clave derivada del dominio
-      function xorCipher(str){
-        const key = window.location.hostname + '_medix_k';
-        return btoa(str.split('').map((c,i) =>
-          String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))
-        ).join(''));
-      }
-      function xorDecipher(b64){
-        const str = atob(b64);
-        const key = window.location.hostname + '_medix_k';
-        return str.split('').map((c,i) =>
-          String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))
-        ).join('');
-      }
-
-      async function registrarBiometria(email, password){
-        try{
-          const cred = await navigator.credentials.create({
-            publicKey:{
-              challenge: strToBuffer('medix-reg-' + Date.now()),
-              rp:{ name:'Relatório MEDIX', id: window.location.hostname },
-              user:{ id: strToBuffer(email), name: email, displayName: email },
-              pubKeyCredParams:[{ type:'public-key', alg:-7 },{ type:'public-key', alg:-257 }],
-              authenticatorSelection:{ authenticatorAttachment:'platform', userVerification:'required' },
-              timeout: 60000
-            }
-          });
-          if(cred){
-            localStorage.setItem(BIO_KEY, btoa(String.fromCharCode(...new Uint8Array(cred.rawId))));
-            localStorage.setItem(BIO_EMAIL_KEY, xorCipher(email));
-            localStorage.setItem(BIO_PWD_KEY,   xorCipher(password));
-            mostrarBioBtn();
-          }
-        }catch(err){
-          // usuario canceló
-        }
-      }
-
-      async function autenticarBiometria(){
-        const credId = localStorage.getItem(BIO_KEY);
-        if(!credId) return null;
-        try{
-          const cred = await navigator.credentials.get({
-            publicKey:{
-              challenge: strToBuffer('medix-auth-' + Date.now()),
-              allowCredentials:[{
-                type:'public-key',
-                id: Uint8Array.from(atob(credId), c => c.charCodeAt(0)),
-                transports:['internal']
-              }],
-              userVerification:'required',
-              timeout: 60000
-            }
-          });
-          if(cred){
-            return {
-              email:    xorDecipher(localStorage.getItem(BIO_EMAIL_KEY)),
-              password: xorDecipher(localStorage.getItem(BIO_PWD_KEY))
-            };
-          }
-          return null;
-        }catch(err){
-          return null;
-        }
-      }
-
-      function mostrarBioBtn(){
-        if(bioDisponible() && localStorage.getItem(BIO_KEY)){
-          $('bioBtn').style.display = 'flex';
-          $('bioDivider').style.display = 'flex';
-        }
-      }
-
-      mostrarBioBtn();
-
-      $('bioBtn').addEventListener('click', async () => {
-        $('loginError').textContent = '';
-        $('bioBtn').innerHTML = '<span class="bio-icon">&#x1F4F1;</span> Verificando…';
-        const creds = await autenticarBiometria();
-        if(!creds){
-          $('bioBtn').innerHTML = '<span class="bio-icon">&#x1F4F1;</span> Entrar com biometria';
-          $('loginError').textContent = 'Biometria não reconhecida.';
-          return;
-        }
-        $('bioBtn').innerHTML = '<span class="bio-icon">&#x1F4F1;</span> Entrando…';
-        try{
-          await signInWithEmailAndPassword(auth, creds.email, creds.password);
-        }catch(err){
-          $('bioBtn').innerHTML = '<span class="bio-icon">&#x1F4F1;</span> Entrar com biometria';
-          $('loginError').textContent = 'Erro ao entrar. Use e-mail e senha.';
-        }
-      });
-
       // ---- LOGIN ----
       $('loginBtn').addEventListener('click', async () => {
         const email    = $('loginEmail').value.trim();
@@ -699,7 +570,6 @@
         $('loginBtn').classList.add('login-loading');
         try{
           await signInWithEmailAndPassword(auth, email, password);
-          lastPassword = password; // guardar para registro de biometría
         }catch(err){
           $('loginBtn').textContent = 'Entrar';
           $('loginBtn').classList.remove('login-loading');
@@ -736,15 +606,6 @@
           connDot.classList.remove('off');
           connText.textContent = t('conexionNube');
 
-          // Ofrecer biometría si está disponible y no está registrada aún
-          if(bioDisponible() && !localStorage.getItem(BIO_KEY) && lastPassword){
-            setTimeout(async () => {
-              const quiere = confirm('Deseja usar biometria (impressão digital ou rosto) para entrar mais rápido nas próximas vezes?');
-              if(quiere) await registrarBiometria(user.email, lastPassword);
-              lastPassword = '';
-            }, 1200);
-          }
-
           // Escuchar datos en tiempo real
           onSnapshot(doc(db, 'medix', 'entries'), (snap) => {
             if(snap.exists()){
@@ -763,7 +624,6 @@
           $('logoutBtn').style.display = 'none';
           $('loginBtn').textContent = 'Entrar';
           $('loginBtn').classList.remove('login-loading');
-          mostrarBioBtn();
         }
       });
 
@@ -1051,6 +911,7 @@
       : new Date().toLocaleDateString('pt-BR');
 
     const wsData = [];
+    wsData.push(['Eagle Solutions']);
     wsData.push([t('excelTitulo')]);
     wsData.push([t('excelResponsable'), responsableReporte]);
     wsData.push([t('excelFecha'), fechaReporte]);
@@ -1081,10 +942,11 @@
       {wch:18}, {wch:16}, {wch:10}, {wch:10}, {wch:12}, {wch:28}
     ];
 
-    if(ws['A1']) ws['A1'].s = { font:{ bold:true, sz:14 } };
-    ['A2','A3'].forEach(ref => { if(ws[ref]) ws[ref].s = { font:{ bold:true } }; });
+    if(ws['A1']) ws['A1'].s = { font:{ bold:true, sz:13, color:{ rgb:'C1502E' } } };
+    if(ws['A2']) ws['A2'].s = { font:{ bold:true, sz:14 } };
+    ['A3','A4'].forEach(ref => { if(ws[ref]) ws[ref].s = { font:{ bold:true } }; });
 
-    const headerRowIdx = 4; // índice 0-based de la fila con los encabezados de la tabla
+    const headerRowIdx = 5; // índice 0-based — ahora es fila 6 (Eagle Solutions ocupa fila 1)
     for(let c = 0; c < headers.length; c++){
       const ref = XLSX.utils.encode_cell({r:headerRowIdx, c});
       if(ws[ref]) ws[ref].s = { font:{ bold:true } };
