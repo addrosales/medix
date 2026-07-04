@@ -190,12 +190,18 @@
   .btn-row .btn{ flex:1; }
 
   /* SEARCH / FILTER */
-  .search-bar{ display:flex; gap:8px; margin-bottom:12px; }
+  .search-bar{ position:relative; display:flex; gap:8px; margin-bottom:12px; }
+  .search-icon{
+    position:absolute; left:13px; top:50%; transform:translateY(-50%);
+    width:15px; height:15px; pointer-events:none; z-index:1;
+    stroke:#9a927c; stroke-width:2; fill:none;
+  }
   .search-bar input{
-    flex:1; padding:12px 14px; border:1.5px solid var(--line); border-radius:9px;
+    flex:1; padding:12px 14px 12px 36px; border:1.5px solid var(--line); border-radius:9px;
     font-family:var(--mono); font-size:15px; background:var(--white);
   }
   .search-bar input:focus{ outline:none; border-color:var(--rail-2); }
+  .search-bar input:focus ~ .search-icon{ stroke:var(--rail-2); }
   .filter-pills{ display:flex; gap:6px; overflow-x:auto; margin-bottom:14px; padding-bottom:2px; }
   .pill{
     flex-shrink:0; padding:7px 14px; border-radius:20px; border:1.5px solid var(--line);
@@ -362,6 +368,7 @@
     <p class="panel-title" data-i18n="tituloRegistros">Registros</p>
     <div class="search-bar">
       <input id="searchInput" type="text" data-i18n-placeholder="phBuscar" placeholder="Buscar por nota fiscal o destino…">
+      <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.2" y2="16.2"></line></svg>
     </div>
     <div class="filter-pills">
       <button class="pill active" data-filter="todos" data-i18n="filtroTodos">Todos</button>
@@ -541,6 +548,8 @@
   const FIREBASE_CONFIGURED = FIREBASE_CONFIG.apiKey !== "TU_API_KEY";
   const REPORT_META_KEY = 'medix_report_meta';
   const ENTRIES_KEY     = 'medix_entries';
+  const SESSION_KEY          = 'medix_login_ts';
+  const SESSION_DURATION_MS  = 12 * 60 * 60 * 1000; // 12 horas
 
   let db = null;
 
@@ -600,6 +609,16 @@
       onAuthStateChanged(auth, async (user) => {
         authUser = user;
         if(user){
+          // Verificar si ya pasaron 12 horas desde el primer login
+          const loginTs = localStorage.getItem(SESSION_KEY);
+          if(loginTs && (Date.now() - Number(loginTs)) >= SESSION_DURATION_MS){
+            localStorage.removeItem(SESSION_KEY);
+            await signOut(auth);
+            return;
+          }
+          if(!loginTs){
+            localStorage.setItem(SESSION_KEY, String(Date.now()));
+          }
           // Usuario autenticado — mostrar app
           $('loginScreen').classList.add('hidden');
           $('logoutBtn').style.display = 'block';
@@ -620,12 +639,23 @@
           });
         } else {
           // No autenticado — mostrar login
+          localStorage.removeItem(SESSION_KEY);
           $('loginScreen').classList.remove('hidden');
           $('logoutBtn').style.display = 'none';
           $('loginBtn').textContent = 'Entrar';
           $('loginBtn').classList.remove('login-loading');
         }
       });
+
+      // Verificar cada minuto si la sesión ya superó las 12 horas
+      // (por si la pestaña queda abierta más tiempo del permitido)
+      setInterval(() => {
+        const loginTs = localStorage.getItem(SESSION_KEY);
+        if(authUser && loginTs && (Date.now() - Number(loginTs)) >= SESSION_DURATION_MS){
+          localStorage.removeItem(SESSION_KEY);
+          signOut(auth);
+        }
+      }, 60000);
 
       return true;
     }catch(err){
